@@ -120,7 +120,13 @@ Add this line to your F</opt/rt6/etc/RT_SiteConfig.pm>:
         WorkingHoursPerDay => 8,
 
         # used to set start/end if one exists but the other does not
-        DefaultDays => 7,
+        # Generic fallback (all formats):
+        DefaultDays => 31,
+        # Per-format defaults (override DefaultDays for a specific view):
+        # DefaultDaysDay     => 31,
+        # DefaultDaysWeek    => 90,
+        # DefaultDaysMonth   => 180,
+        # DefaultDaysQuarter => 365,
     );
 
 =head1 METHODS
@@ -358,7 +364,14 @@ sub _GetTimeRange {
             $days = $total_time / ( 60 * $hours_per_day );
         }
         else {
-            $days = $options{'DefaultDays'} || 7;
+            my $format     = lc( $options{'DefaultFormat'} || 'day' );
+            my $format_key = 'DefaultDays' . ucfirst($format);
+            $days = $options{$format_key}
+                 || $options{'DefaultDays'}
+                 || ( $format eq 'quarter' ? 365
+                    : $format eq 'month'   ? 180
+                    : $format eq 'week'    ? 90
+                    : 31 );
         }
 
         # since we only use date without time, let's make days inclusive

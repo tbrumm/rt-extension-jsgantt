@@ -580,6 +580,10 @@ JSGantt.GanttChart =  function(pGanttVar, pDiv, pFormat)
       var vDepId = 1;
       var vTaskList     = new Array();	
 	  var vFormatArr	= new Array("day","week","month","quarter");
+      var vOwnerList = [];          // [{name:'alice', display:'Alice Smith'}, ...]
+      var vOnOwnerChange = null;    // fn(taskId, newOwnerName)
+      var vOnDateChange  = null;    // fn(taskId, 'start'|'end', 'YYYY-MM-DD')
+      var vEditChangeHandler = null;
       var vQuarterArr   = new Array(1,1,1,2,2,2,3,3,3,4,4,4);
       var vMonthDaysArr = new Array(31,28,31,30,31,30,31,31,30,31,30,31);
       var vMonthArr     = new Array("January","February","March","April","May","June","July","August","September","October","November","December");
@@ -628,7 +632,19 @@ JSGantt.GanttChart =  function(pGanttVar, pDiv, pFormat)
 * @return {void}
 */ this.setShowEndDate = function(pShow) { vShowEndDate = pShow; };
 /**
-* Overall date input format 
+* Set list of owners for editable resource dropdown
+* @param {Array} list  Array of {name, display} objects
+*/ this.setOwnerList = function(list) { vOwnerList = list || []; };
+/**
+* Set callback invoked when the user changes an owner dropdown.
+* Signature: fn(taskId, newOwnerName)
+*/ this.setOnOwnerChange = function(fn) { vOnOwnerChange = fn; };
+/**
+* Set callback invoked when the user picks a new date.
+* Signature: fn(taskId, field, isoDateStr)  — field is 'start' or 'end'
+*/ this.setOnDateChange = function(fn) { vOnDateChange = fn; };
+/**
+* Overall date input format
 * @param pShow {String} (mm/dd/yyyy,dd/mm/yyyy,yyyy-mm-dd)
 * @method setDateInputFormat
 * @return {void}
@@ -919,9 +935,13 @@ Complete-Displays task percent complete</p>
       var vNumDays = 0;
       var vDayWidth = 0;
       var vStr = "";
-      var vNameWidth = 220;	
-      var vStatusWidth = 70;
-      var vLeftWidth = 15 + 220 + 70 + 70 + 70 + 70 + 70;
+      var vNameWidth    = 220;
+      var vResColWidth  = (vOwnerList && vOwnerList.length > 0) ? 120 : 80;
+      var vDurColWidth  = 80;
+      var vCompColWidth = 80;
+      var vDateColWidth = vOnDateChange ? 110 : 80;
+      var vStatusWidth  = vResColWidth; // kept for any remaining references
+      var vLeftWidth = 15 + vNameWidth + vResColWidth + vDurColWidth + vCompColWidth + vDateColWidth + vDateColWidth;
 
       if(vTaskList.length > 0)
       {
@@ -972,40 +992,53 @@ Complete-Displays task percent complete</p>
          vDayWidth = (vColWidth / vColUnit) + (1/vColUnit);
 
          vMainTable =
-            '<TABLE id=theTable cellSpacing=0 cellPadding=0 border=0><TBODY><TR>' +
-            '<TD vAlign=top bgColor=#ffffff>';
+            '<div id="theTable" style="display:flex;width:100%;align-items:flex-start;">';
 
-         if(vShowRes !=1) vNameWidth+=vStatusWidth;
-         if(vShowDur !=1) vNameWidth+=vStatusWidth;
-         if(vShowComp!=1) vNameWidth+=vStatusWidth;
-		   if(vShowStartDate!=1) vNameWidth+=vStatusWidth;
-		   if(vShowEndDate!=1) vNameWidth+=vStatusWidth;
+         if(vShowRes      !=1) vNameWidth += vResColWidth;
+         if(vShowDur      !=1) vNameWidth += vDurColWidth;
+         if(vShowComp     !=1) vNameWidth += vCompColWidth;
+         if(vShowStartDate!=1) vNameWidth += vDateColWidth;
+         if(vShowEndDate  !=1) vNameWidth += vDateColWidth;
         
 		   // DRAW the Left-side of the chart (names, resources, comp%)
          vLeftTable =
-            '<DIV class=scroll id=leftside style="width:' + vLeftWidth + 'px"><TABLE cellSpacing=0 cellPadding=0 border=0><TBODY>' +
-            '<TR style="HEIGHT: 17px">' +
-            '  <TD style="WIDTH: 15px; HEIGHT: 17px"></TD>' +
-            '  <TD style="WIDTH: ' + vNameWidth + 'px; HEIGHT: 17px"><NOBR></NOBR></TD>'; 
+            '<div id="leftside" style="flex:0 0 ' + vLeftWidth + 'px;width:' + vLeftWidth + 'px;overflow:hidden;">' +
+            '<TABLE cellSpacing=0 cellPadding=0 border=0><TBODY>' +
+            '<TR style="HEIGHT: 22px">' +
+            '  <TD style="WIDTH: 15px; HEIGHT: 22px"></TD>' +
+            '  <TD style="WIDTH: ' + vNameWidth + 'px; HEIGHT: 22px"><NOBR></NOBR></TD>';
 
-         if(vShowRes ==1) vLeftTable += '  <TD style="WIDTH: ' + vStatusWidth + 'px; HEIGHT: 17px"></TD>' ;
-         if(vShowDur ==1) vLeftTable += '  <TD style="WIDTH: ' + vStatusWidth + 'px; HEIGHT: 17px"></TD>' ;
-         if(vShowComp==1) vLeftTable += '  <TD style="WIDTH: ' + vStatusWidth + 'px; HEIGHT: 17px"></TD>' ;
-			if(vShowStartDate==1) vLeftTable += '  <TD style="WIDTH: ' + vStatusWidth + 'px; HEIGHT: 17px"></TD>' ;
-			if(vShowEndDate==1) vLeftTable += '  <TD style="WIDTH: ' + vStatusWidth + 'px; HEIGHT: 17px"></TD>' ;
+         if(vShowRes      ==1) vLeftTable += '  <TD style="WIDTH: ' + vResColWidth  + 'px; HEIGHT: 22px"></TD>' ;
+         if(vShowDur      ==1) vLeftTable += '  <TD style="WIDTH: ' + vDurColWidth  + 'px; HEIGHT: 22px"></TD>' ;
+         if(vShowComp     ==1) vLeftTable += '  <TD style="WIDTH: ' + vCompColWidth + 'px; HEIGHT: 22px"></TD>' ;
+         if(vShowStartDate==1) vLeftTable += '  <TD style="WIDTH: ' + vDateColWidth + 'px; HEIGHT: 22px"></TD>' ;
+         if(vShowEndDate  ==1) vLeftTable += '  <TD style="WIDTH: ' + vDateColWidth + 'px; HEIGHT: 22px"></TD>' ;
 
          vLeftTable +=
-            '<TR style="HEIGHT: 20px">' +
-            '  <TD style="BORDER-TOP: #efefef 1px solid; WIDTH: 15px; HEIGHT: 20px"></TD>' +
-            '  <TD style="BORDER-TOP: #efefef 1px solid; WIDTH: ' + vNameWidth + 'px; HEIGHT: 20px"><NOBR></NOBR></TD>' ;
+            '<TR class="gantt-header-row" style="HEIGHT: 24px">' +
+            '  <TD style="BORDER-TOP: #dee2e6 1px solid; WIDTH: 15px; HEIGHT: 24px"></TD>' +
+            '  <TD style="BORDER-TOP: #dee2e6 1px solid; WIDTH: ' + vNameWidth + 'px; HEIGHT: 24px"><NOBR></NOBR></TD>' ;
 
-         if(vShowRes ==1) vLeftTable += '  <TD style="BORDER-TOP: #efefef 1px solid; FONT-SIZE: 12px; BORDER-LEFT: #efefef 1px solid; WIDTH: 60px; HEIGHT: 20px" align=center nowrap>Resource</TD>' ;
-         if(vShowDur ==1) vLeftTable += '  <TD style="BORDER-TOP: #efefef 1px solid; FONT-SIZE: 12px; BORDER-LEFT: #efefef 1px solid; WIDTH: 60px; HEIGHT: 20px" align=center nowrap>Duration</TD>' ;
-         if(vShowComp==1) vLeftTable += '  <TD style="BORDER-TOP: #efefef 1px solid; FONT-SIZE: 12px; BORDER-LEFT: #efefef 1px solid; WIDTH: 60px; HEIGHT: 20px" align=center nowrap>% Comp.</TD>' ;
-         if(vShowStartDate==1) vLeftTable += '  <TD style="BORDER-TOP: #efefef 1px solid; FONT-SIZE: 12px; BORDER-LEFT: #efefef 1px solid; WIDTH: 60px; HEIGHT: 20px" align=center nowrap>Start Date</TD>' ;
-         if(vShowEndDate==1) vLeftTable += '  <TD style="BORDER-TOP: #efefef 1px solid; FONT-SIZE: 12px; BORDER-LEFT: #efefef 1px solid; WIDTH: 60px; HEIGHT: 20px" align=center nowrap>End Date</TD>' ;
+         if(vShowRes      ==1) vLeftTable += '  <TD style="BORDER-TOP:#dee2e6 1px solid; FONT-SIZE:12px; FONT-WEIGHT:bold; BORDER-LEFT:#dee2e6 1px solid; WIDTH:' + vResColWidth  + 'px; HEIGHT:24px; white-space:nowrap; overflow:hidden;" align=center>Owner</TD>' ;
+         if(vShowDur      ==1) vLeftTable += '  <TD style="BORDER-TOP:#dee2e6 1px solid; FONT-SIZE:12px; FONT-WEIGHT:bold; BORDER-LEFT:#dee2e6 1px solid; WIDTH:' + vDurColWidth  + 'px; HEIGHT:24px; white-space:nowrap; overflow:hidden;" align=center>Duration</TD>' ;
+         if(vShowComp     ==1) vLeftTable += '  <TD style="BORDER-TOP:#dee2e6 1px solid; FONT-SIZE:12px; FONT-WEIGHT:bold; BORDER-LEFT:#dee2e6 1px solid; WIDTH:' + vCompColWidth + 'px; HEIGHT:24px; white-space:nowrap; overflow:hidden;" align=center>% Comp.</TD>' ;
+         if(vShowStartDate==1) vLeftTable += '  <TD style="BORDER-TOP:#dee2e6 1px solid; FONT-SIZE:12px; FONT-WEIGHT:bold; BORDER-LEFT:#dee2e6 1px solid; WIDTH:' + vDateColWidth + 'px; HEIGHT:24px; white-space:nowrap; overflow:hidden;" align=center>Start</TD>' ;
+         if(vShowEndDate  ==1) vLeftTable += '  <TD style="BORDER-TOP:#dee2e6 1px solid; FONT-SIZE:12px; FONT-WEIGHT:bold; BORDER-LEFT:#dee2e6 1px solid; WIDTH:' + vDateColWidth + 'px; HEIGHT:24px; white-space:nowrap; overflow:hidden;" align=center>End</TD>' ;
  
          vLeftTable += '</TR>';
+
+            // Helper: HTML-escape a value for inline attributes / text
+            function ganttEsc(s) {
+              if(s == null) return '';
+              return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            }
+            // Helper: format a Date as YYYY-MM-DD (required by <input type="date">)
+            function toISODate(d) {
+              if(!d) return '';
+              var m = d.getMonth() + 1, day = d.getDate();
+              return d.getFullYear() + '-' + (m   < 10 ? '0' : '') + m   +
+                                       '-' + (day < 10 ? '0' : '') + day;
+            }
 
             for(i = 0; i < vTaskList.length; i++)
             {
@@ -1024,9 +1057,9 @@ Complete-Displays task percent complete</p>
 			      else
                  vLeftTable += '<TR id=child_' + vID + ' bgcolor=#' + vBGColor + ' onMouseover=g.mouseOver(this,' + vID + ',"left","' + vRowType + '") onMouseout=g.mouseOut(this,' + vID + ',"left","' + vRowType + '")>' ;
 
-			      vLeftTable += 
-                  '  <TD class=gdatehead style="WIDTH: 15px; HEIGHT: 20px; BORDER-TOP: #efefef 1px solid; FONT-SIZE: 12px; BORDER-LEFT: #efefef 1px solid;">&nbsp;</TD>' +
-                  '  <TD class=gname style="WIDTH: ' + vNameWidth + 'px; HEIGHT: 20px; BORDER-TOP: #efefef 1px solid; FONT-SIZE: 12px;" nowrap><NOBR><span style="color: #aaaaaa">';
+			      vLeftTable +=
+                  '  <TD class=gdatehead style="WIDTH: 15px; HEIGHT: 24px; BORDER-TOP: #dee2e6 1px solid; FONT-SIZE: 13px; BORDER-LEFT: #dee2e6 1px solid;">&nbsp;</TD>' +
+                  '  <TD class=gname style="WIDTH: ' + vNameWidth + 'px; HEIGHT: 24px; BORDER-TOP: #dee2e6 1px solid; FONT-SIZE: 13px;" nowrap><NOBR><span style="color: #aaaaaa">';
 
                for(j=1; j<vTaskList[i].getLevel(); j++) {
                   vLeftTable += '&nbsp&nbsp&nbsp&nbsp';
@@ -1036,74 +1069,106 @@ Complete-Displays task percent complete</p>
 
                if( vTaskList[i].getGroup()) {
                   if( vTaskList[i].getOpen() == 1) 
-                     vLeftTable += '<SPAN id="group_' + vID + '" style="color:#000000; cursor:pointer; font-weight:bold; FONT-SIZE: 12px;" onclick="JSGantt.folder(' + vID + ','+vGanttVar+');'+vGanttVar+'.DrawDependencies();">&ndash;</span><span style="color:#000000">&nbsp</SPAN>' ;
+                     vLeftTable += '<SPAN id="group_' + vID + '" style="color:#495057; cursor:pointer; font-weight:bold; FONT-SIZE: 13px;" onclick="JSGantt.folder(' + vID + ','+vGanttVar+');'+vGanttVar+'.DrawDependencies();">&ndash;</span><span style="color:#495057">&nbsp</SPAN>' ;
                   else
-                     vLeftTable += '<SPAN id="group_' + vID + '" style="color:#000000; cursor:pointer; font-weight:bold; FONT-SIZE: 12px;" onclick="JSGantt.folder(' + vID + ','+vGanttVar+');'+vGanttVar+'.DrawDependencies();">+</span><span style="color:#000000">&nbsp</SPAN>' ;
+                     vLeftTable += '<SPAN id="group_' + vID + '" style="color:#495057; cursor:pointer; font-weight:bold; FONT-SIZE: 13px;" onclick="JSGantt.folder(' + vID + ','+vGanttVar+');'+vGanttVar+'.DrawDependencies();">+</span><span style="color:#495057">&nbsp</SPAN>' ;
 				 
                } else {
 
-                  vLeftTable += '<span style="color: #000000; font-weight:bold; FONT-SIZE: 12px;">&nbsp&nbsp&nbsp</span>';
+                  vLeftTable += '<span style="color: #495057; font-weight:bold; FONT-SIZE: 13px;">&nbsp&nbsp&nbsp</span>';
                }
 
                vLeftTable += 
                   '<span onclick=JSGantt.taskLink("' + vTaskList[i].getLink() + '",300,200); style="cursor:pointer"> ' + vTaskList[i].getName() + '</span></NOBR></TD>' ;
 
-               if(vShowRes ==1) vLeftTable += '  <TD class=gname style="WIDTH: 60px; HEIGHT: 20px; TEXT-ALIGN: center; BORDER-TOP: #efefef 1px solid; FONT-SIZE: 12px; BORDER-LEFT: #efefef 1px solid;" align=center><NOBR>' + vTaskList[i].getResource() + '</NOBR></TD>' ;
-               if(vShowDur ==1) vLeftTable += '  <TD class=gname style="WIDTH: 60px; HEIGHT: 20px; TEXT-ALIGN: center; BORDER-TOP: #efefef 1px solid; FONT-SIZE: 12px; BORDER-LEFT: #efefef 1px solid;" align=center><NOBR>' + vTaskList[i].getDuration(vFormat) + '</NOBR></TD>' ;
-               if(vShowComp==1) vLeftTable += '  <TD class=gname style="WIDTH: 60px; HEIGHT: 20px; TEXT-ALIGN: center; BORDER-TOP: #efefef 1px solid; FONT-SIZE: 12px; BORDER-LEFT: #efefef 1px solid;" align=center><NOBR>' + vTaskList[i].getCompStr()  + '</NOBR></TD>' ;
-               if(vShowStartDate==1) vLeftTable += '  <TD class=gname style="WIDTH: 60px; HEIGHT: 20px; TEXT-ALIGN: center; BORDER-TOP: #efefef 1px solid; FONT-SIZE: 12px; BORDER-LEFT: #efefef 1px solid;" align=center><NOBR>' + JSGantt.formatDateStr( vTaskList[i].getStart(), vDateDisplayFormat) + '</NOBR></TD>' ;
-               if(vShowEndDate==1) vLeftTable += '  <TD class=gname style="WIDTH: 60px; HEIGHT: 20px; TEXT-ALIGN: center; BORDER-TOP: #efefef 1px solid; FONT-SIZE: 12px; BORDER-LEFT: #efefef 1px solid;" align=center><NOBR>' + JSGantt.formatDateStr( vTaskList[i].getEnd(), vDateDisplayFormat) + '</NOBR></TD>' ;
+               if(vShowRes == 1) {
+                 var _taskId  = vTaskList[i].getID();
+                 var _taskRes = vTaskList[i].getResource();
+                 var _tdRes = '  <TD class=gname style="WIDTH:' + vResColWidth + 'px; HEIGHT:24px; TEXT-ALIGN:center; BORDER-TOP:#dee2e6 1px solid; FONT-SIZE:13px; BORDER-LEFT:#dee2e6 1px solid; padding:1px 2px; vertical-align:middle;">';
+                 if(vOwnerList.length > 0) {
+                   _tdRes += '<select class="gantt-edit-select" data-task-id="' + _taskId + '" data-field="owner">';
+                   for(var _oi = 0; _oi < vOwnerList.length; _oi++) {
+                     var _o = vOwnerList[_oi];
+                     _tdRes += '<option value="' + ganttEsc(_o.name) + '"' + (_o.name === _taskRes ? ' selected' : '') + '>' + ganttEsc(_o.display) + '</option>';
+                   }
+                   _tdRes += '</select>';
+                 } else {
+                   _tdRes += '<span title="' + ganttEsc(_taskRes) + '">' + ganttEsc(_taskRes) + '</span>';
+                 }
+                 vLeftTable += _tdRes + '</TD>';
+               }
+               if(vShowDur ==1) vLeftTable += '  <TD class=gname style="WIDTH:' + vDurColWidth  + 'px; HEIGHT:24px; TEXT-ALIGN:center; BORDER-TOP:#dee2e6 1px solid; FONT-SIZE:13px; BORDER-LEFT:#dee2e6 1px solid; white-space:nowrap; overflow:hidden;" align=center>' + vTaskList[i].getDuration(vFormat) + '</TD>' ;
+               if(vShowComp==1) vLeftTable += '  <TD class=gname style="WIDTH:' + vCompColWidth + 'px; HEIGHT:24px; TEXT-ALIGN:center; BORDER-TOP:#dee2e6 1px solid; FONT-SIZE:13px; BORDER-LEFT:#dee2e6 1px solid; white-space:nowrap; overflow:hidden;" align=center>' + vTaskList[i].getCompStr() + '</TD>' ;
+               if(vShowStartDate==1) {
+                 var _startD = vTaskList[i].getStart();
+                 vLeftTable += '  <TD class=gname style="WIDTH:' + vDateColWidth + 'px; HEIGHT:24px; TEXT-ALIGN:center; BORDER-TOP:#dee2e6 1px solid; FONT-SIZE:13px; BORDER-LEFT:#dee2e6 1px solid; padding:1px 2px; vertical-align:middle;">';
+                 if(vOnDateChange) {
+                   vLeftTable += '<input type="date" class="gantt-edit-date" data-task-id="' + vTaskList[i].getID() + '" data-field="start" value="' + toISODate(_startD) + '">';
+                 } else {
+                   vLeftTable += JSGantt.formatDateStr(_startD, vDateDisplayFormat);
+                 }
+                 vLeftTable += '</TD>';
+               }
+               if(vShowEndDate==1) {
+                 var _endD = vTaskList[i].getEnd();
+                 vLeftTable += '  <TD class=gname style="WIDTH:' + vDateColWidth + 'px; HEIGHT:24px; TEXT-ALIGN:center; BORDER-TOP:#dee2e6 1px solid; FONT-SIZE:13px; BORDER-LEFT:#dee2e6 1px solid; padding:1px 2px; vertical-align:middle;">';
+                 if(vOnDateChange) {
+                   vLeftTable += '<input type="date" class="gantt-edit-date" data-task-id="' + vTaskList[i].getID() + '" data-field="end" value="' + toISODate(_endD) + '">';
+                 } else {
+                   vLeftTable += JSGantt.formatDateStr(_endD, vDateDisplayFormat);
+                 }
+                 vLeftTable += '</TD>';
+               }
 
                vLeftTable += '</TR>';
 
             }
 
-            // DRAW the date format selector at bottom left.  Another potential GanttChart parameter to hide/show this selector
+            // DRAW the date format selector at bottom left.
             vLeftTable += '</TD></TR>' +
-              '<TR><TD border=1 colspan=5 align=left style="BORDER-TOP: #efefef 1px solid; FONT-SIZE: 11px; BORDER-LEFT: #efefef 1px solid; height=18px">&nbsp;&nbsp;Powered by <a href=http://www.jsgantt.com>jsGantt</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Format:';
-		
-			if (vFormatArr.join().indexOf("minute")!=-1) { 
-            if (vFormat=='minute') vLeftTable += '<INPUT TYPE=RADIO NAME="radFormat" VALUE="minute" checked>Minute';
-            else                vLeftTable += '<INPUT TYPE=RADIO NAME="radFormat" onclick=JSGantt.changeFormat("minute",'+vGanttVar+'); VALUE="minute">Minute';
-			}
-			
-			if (vFormatArr.join().indexOf("hour")!=-1) { 
-            if (vFormat=='hour') vLeftTable += '<INPUT TYPE=RADIO NAME="radFormat" VALUE="hour" checked>Hour';
-            else                vLeftTable += '<INPUT TYPE=RADIO NAME="radFormat" onclick=JSGantt.changeFormat("hour",'+vGanttVar+'); VALUE="hour">Hour';
-			}
-			
-			if (vFormatArr.join().indexOf("day")!=-1) { 
-            if (vFormat=='day') vLeftTable += '<INPUT TYPE=RADIO NAME="radFormat" VALUE="day" checked>Day';
-            else                vLeftTable += '<INPUT TYPE=RADIO NAME="radFormat" onclick=JSGantt.changeFormat("day",'+vGanttVar+'); VALUE="day">Day';
-			}
-			
-			if (vFormatArr.join().indexOf("week")!=-1) { 
-            if (vFormat=='week') vLeftTable += '<INPUT TYPE=RADIO NAME="radFormat" VALUE="week" checked>Week';
-            else                vLeftTable += '<INPUT TYPE=RADIO NAME="radFormat" onclick=JSGantt.changeFormat("week",'+vGanttVar+') VALUE="week">Week';
-			}
-			
-			if (vFormatArr.join().indexOf("month")!=-1) { 
-            if (vFormat=='month') vLeftTable += '<INPUT TYPE=RADIO NAME="radFormat" VALUE="month" checked>Month';
-            else                vLeftTable += '<INPUT TYPE=RADIO NAME="radFormat" onclick=JSGantt.changeFormat("month",'+vGanttVar+') VALUE="month">Month';
-			}
-			
-			if (vFormatArr.join().indexOf("quarter")!=-1) { 
-            if (vFormat=='quarter') vLeftTable += '<INPUT TYPE=RADIO NAME="radFormat" VALUE="quarter" checked>Quarter';
-            else                vLeftTable += '<INPUT TYPE=RADIO NAME="radFormat" onclick=JSGantt.changeFormat("quarter",'+vGanttVar+') VALUE="quarter">Quarter';
-			}
-			
-//            vLeftTable += '<INPUT TYPE=RADIO NAME="other" VALUE="other" style="display:none"> .';
+              '<TR><TD colspan=6 align=left style="BORDER-TOP: #dee2e6 1px solid; PADDING: 4px 8px; vertical-align: middle;">' +
+              '<span class="gantt-format-label" style="font-size:12px; color:#6c757d; margin-right:8px;">Format:</span>' +
+              '<div class="btn-group btn-group-sm gantt-format-btns" role="group" style="display:inline-flex;">';
 
-            vLeftTable += '</TD></TR></TBODY></TABLE></TD>';
+			if (vFormatArr.join().indexOf("minute")!=-1) {
+            if (vFormat=='minute') vLeftTable += '<button type="button" class="btn btn-primary btn-sm gantt-fmt-btn active" disabled>Minute</button>';
+            else                   vLeftTable += '<button type="button" class="btn btn-outline-secondary btn-sm gantt-fmt-btn" onclick="JSGantt.changeFormat(\'minute\','+vGanttVar+');">Minute</button>';
+			}
+
+			if (vFormatArr.join().indexOf("hour")!=-1) {
+            if (vFormat=='hour') vLeftTable += '<button type="button" class="btn btn-primary btn-sm gantt-fmt-btn active" disabled>Hour</button>';
+            else                 vLeftTable += '<button type="button" class="btn btn-outline-secondary btn-sm gantt-fmt-btn" onclick="JSGantt.changeFormat(\'hour\','+vGanttVar+');">Hour</button>';
+			}
+
+			if (vFormatArr.join().indexOf("day")!=-1) {
+            if (vFormat=='day') vLeftTable += '<button type="button" class="btn btn-primary btn-sm gantt-fmt-btn active" disabled>Day</button>';
+            else                vLeftTable += '<button type="button" class="btn btn-outline-secondary btn-sm gantt-fmt-btn" onclick="JSGantt.changeFormat(\'day\','+vGanttVar+');">Day</button>';
+			}
+
+			if (vFormatArr.join().indexOf("week")!=-1) {
+            if (vFormat=='week') vLeftTable += '<button type="button" class="btn btn-primary btn-sm gantt-fmt-btn active" disabled>Week</button>';
+            else                 vLeftTable += '<button type="button" class="btn btn-outline-secondary btn-sm gantt-fmt-btn" onclick="JSGantt.changeFormat(\'week\','+vGanttVar+');">Week</button>';
+			}
+
+			if (vFormatArr.join().indexOf("month")!=-1) {
+            if (vFormat=='month') vLeftTable += '<button type="button" class="btn btn-primary btn-sm gantt-fmt-btn active" disabled>Month</button>';
+            else                  vLeftTable += '<button type="button" class="btn btn-outline-secondary btn-sm gantt-fmt-btn" onclick="JSGantt.changeFormat(\'month\','+vGanttVar+');">Month</button>';
+			}
+
+			if (vFormatArr.join().indexOf("quarter")!=-1) {
+            if (vFormat=='quarter') vLeftTable += '<button type="button" class="btn btn-primary btn-sm gantt-fmt-btn active" disabled>Quarter</button>';
+            else                    vLeftTable += '<button type="button" class="btn btn-outline-secondary btn-sm gantt-fmt-btn" onclick="JSGantt.changeFormat(\'quarter\','+vGanttVar+');">Quarter</button>';
+			}
+
+            vLeftTable += '</div></TD></TR></TBODY></TABLE></div>';
 
             vMainTable += vLeftTable;
 
             // Draw the Chart Rows
-            vRightTable = 
-            '<TD style="width: ' + vChartWidth + 'px;" vAlign=top bgColor=#ffffff>' +
-            '<DIV class=scroll2 id=rightside>' +
+            vRightTable =
+            '<div id="rightside" style="flex:1 1 0;min-width:0;overflow-x:auto;overflow-y:hidden;position:relative;">' +
             '<TABLE style="width: ' + vChartWidth + 'px;" cellSpacing=0 cellPadding=0 border=0>' +
-            '<TBODY><TR style="HEIGHT: 18px">';
+            '<TBODY><TR style="HEIGHT: 22px">';
 
             vTmpDate.setFullYear(vMinDate.getFullYear(), vMinDate.getMonth(), vMinDate.getDate());
             vTmpDate.setHours(0);
@@ -1513,9 +1578,23 @@ Complete-Displays task percent complete</p>
 
          }
 
-         vMainTable += vRightTable + '</DIV></TD></TR></TBODY></TABLE></BODY></HTML>';
+         vMainTable += vRightTable + '</div></div>';
 
 		   vDiv.innerHTML = vMainTable;
+
+         // Attach inline-edit event listeners via delegation (re-registered on every redraw)
+         if(vOnOwnerChange || vOnDateChange) {
+           if(vEditChangeHandler) vDiv.removeEventListener('change', vEditChangeHandler);
+           vEditChangeHandler = function(e) {
+             var el = e.target;
+             if(el.classList && el.classList.contains('gantt-edit-select') && vOnOwnerChange) {
+               vOnOwnerChange(parseInt(el.dataset.taskId, 10), el.value, el);
+             } else if(el.classList && el.classList.contains('gantt-edit-date') && vOnDateChange) {
+               vOnDateChange(parseInt(el.dataset.taskId, 10), el.dataset.field, el.value, el);
+             }
+           };
+           vDiv.addEventListener('change', vEditChangeHandler);
+         }
 
       }
 
@@ -1528,10 +1607,10 @@ Complete-Displays task percent complete</p>
 */  this.mouseOver = function( pObj, pID, pPos, pType ) {
       if( pPos == 'right' )  vID = 'child_' + pID;
       else vID = 'childrow_' + pID;
-      
-      pObj.bgColor = "#ffffaa";
+
+      pObj.style.backgroundColor = "rgba(13,110,253,0.10)";
       vRowObj = JSGantt.findObj(vID);
-      if (vRowObj) vRowObj.bgColor = "#ffffaa";
+      if (vRowObj) vRowObj.style.backgroundColor = "rgba(13,110,253,0.10)";
    };
 
 /**
@@ -1541,17 +1620,23 @@ Complete-Displays task percent complete</p>
 */  this.mouseOut = function( pObj, pID, pPos, pType ) {
       if( pPos == 'right' )  vID = 'child_' + pID;
       else vID = 'childrow_' + pID;
-      
-      pObj.bgColor = "#ffffff";
+
       vRowObj = JSGantt.findObj(vID);
       if (vRowObj) {
          if( pType == "group") {
+            pObj.style.backgroundColor = "";
             pObj.bgColor = "#f3f3f3";
+            vRowObj.style.backgroundColor = "";
             vRowObj.bgColor = "#f3f3f3";
          } else {
+            pObj.style.backgroundColor = "";
             pObj.bgColor = "#ffffff";
+            vRowObj.style.backgroundColor = "";
             vRowObj.bgColor = "#ffffff";
          }
+      } else {
+         pObj.style.backgroundColor = "";
+         pObj.bgColor = "#ffffff";
       }
    };
 

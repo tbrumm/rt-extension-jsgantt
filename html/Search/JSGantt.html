@@ -51,60 +51,161 @@
 
 <& /Elements/Tabs &>
 
-<div style="position:relative" class="gantt" id="GanttChartDIV"></div>
+<style>
+/* Make the Gantt chart fill the full content area */
+#GanttChartDIV {
+    width: 100%;
+    min-height: calc(100vh - 160px);
+    display: block;
+    box-sizing: border-box;
+}
+
+/* Ensure RT content wrapper does not constrain chart width */
+.content-column #GanttChartDIV,
+#content #GanttChartDIV,
+.main-content #GanttChartDIV,
+.titlebox-content #GanttChartDIV {
+    width: 100% !important;
+}
+</style>
+
+<div class="gantt" id="GanttChartDIV"></div>
+
 <script>
+  var g = new JSGantt.GanttChart('g', document.getElementById('GanttChartDIV'),
+      '<% $options{'DefaultFormat'} || 'day' %>');
 
-  // here's all the html code neccessary to display the chart object
+  g.setShowRes(<% $options{'ShowOwner'}? 1 : 0 %>);
+  g.setShowDur(<% $options{'ShowDuration'}? 1 : 0 %>);
+  g.setShowComp(<% $options{'ShowProgress'} ? 1 : 0 %>);
+  g.setCaptionType('<% $options{'CaptionType'} or 'Resource' %>');
+  g.setShowStartDate(<% defined $options{'ShowStartDate'} ? $options{'ShowStartDate'} : 1 %>);
+  g.setShowEndDate(<% defined $options{'ShowEndDate'} ? $options{'ShowEndDate'} : 1 %>);
+  g.setDateInputFormat('<% $options{'DateInputFormat'} or 'mm/dd/yyyy' %>');
+  g.setDateDisplayFormat('<% $options{'DateDisplayFormat'} or 'mm/dd/yyyy' %>');
+  g.setFormatArr(<% $options{'FormatArr'} or q!'day','week','month','quarter'! | n %>);
 
-  // Future idea would be to allow XML file name to be passed in and chart tasks built from file.
+  // ── Inline editing helpers ────────────────────────────────────────────────
 
-  var g = new JSGantt.GanttChart('g',document.getElementById('GanttChartDIV'),
-  '<% $options{'DefaultFormat'} || 'day' %>' );
+  // RT base path (handles RT mounted under a subpath)
+  var _rtBase = '<% RT->Config->Get("WebPath") |n %>';
 
-    g.setShowRes(<% $options{'ShowOwner'}? 1 : 0 %>);
-    g.setShowDur(<% $options{'ShowDuration'}? 1 : 0 %> );
-    g.setShowComp(<% $options{'ShowProgress'} ? 1 : 0 %> );
-    g.setCaptionType('<% $options{'CaptionType'} or 'Resource' %>');  // Set to Show Caption (None,Caption,Resource,Duration,Complete)
-    g.setShowStartDate(<% defined $options{'ShowStartDate'} ? $options{'ShowStartDate'} : 1 %>); // Show/Hide Start Date(0/1)
-    g.setShowEndDate(<% defined $options{'ShowEndDate'} ? $options{'ShowEndDate'} : 1 %>); // Show/Hide End Date(0/1)
-    g.setDateInputFormat('<% $options{'DateInputFormat'} or 'mm/dd/yyyy' %>')  // Set format of input dates ('mm/dd/yyyy', 'dd/mm/yyyy', 'yyyy-mm-dd')
-    g.setDateDisplayFormat('<% $options{'DateDisplayFormat'} or 'mm/dd/yyyy' %>');
-    g.setFormatArr(<% $options{'FormatArr'} or q!'day','week','month','quarter'! | n %>) // Set format options (up to 4 : "minute","hour","day","week","month","quarter")
+  // Find RT's CSRF/authenticity token if the page contains one
+  function _rtCsrfToken() {
+    var m = document.querySelector('meta[name="csrf-token"]') ||
+            document.querySelector('meta[name="rt-authenticity-token"]');
+    if (m) return m.getAttribute('content');
+    var f = document.querySelector('input[name="token"][type="hidden"]');
+    if (f) return f.value;
+    return null;
+  }
 
-  //var gr = new Graphics();
+  // Perform a PUT to RT REST 2.0 and give visual feedback on the input element.
+  // el: the DOM <select> or <input> that triggered the change
+  function _rtTicketUpdate(el, taskId, payload) {
+    var headers = {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest'
+    };
+    var tok = _rtCsrfToken();
+    if (tok) headers['X-RT-Authenticity-Token'] = tok;
 
-  if( g ) {
+    el.disabled = true;
+    el.style.borderColor = '';
 
-    // Parameters             (pID, pName,                  pStart,      pEnd,        pColor,   pLink,          pMile, pRes,  pComp, pGroup, pParent, pOpen, pDepend, pCaption)
-    
-    // You can also use the XML file parser JSGantt.parseXML('project.xml',g)
+    fetch(_rtBase + '/REST/2.0/ticket/' + taskId, {
+      method: 'PUT',
+      credentials: 'same-origin',
+      headers: headers,
+      body: JSON.stringify(payload)
+    }).then(function(r) {
+      el.disabled = false;
+      if (r.ok) {
+        // brief green flash = saved
+        el.style.borderColor = '#198754';
+        el.style.boxShadow   = '0 0 0 2px rgba(25,135,84,.25)';
+        setTimeout(function() {
+          el.style.borderColor = '';
+          el.style.boxShadow   = '';
+        }, 1800);
+      } else {
+        r.text().then(function(txt) {
+          el.style.borderColor = '#dc3545';
+          el.style.boxShadow   = '0 0 0 2px rgba(220,53,69,.25)';
+          var msg = txt;
+          try { msg = JSON.parse(txt).message || txt; } catch(x) {}
+          console.error('RT update failed (HTTP ' + r.status + '):', msg);
+          alert('<% loc("Update failed") |n %>: HTTP ' + r.status + ' — ' + msg);
+        });
+      }
+    }).catch(function(err) {
+      el.disabled = false;
+      el.style.borderColor = '#dc3545';
+      console.error('RT update network error:', err);
+      alert('<% loc("Network error during update") |n %>: ' + err);
+    });
+  }
+
+  // ── Inline editing: owner dropdown ───────────────────────────────────────
+  g.setOwnerList(<% $owner_list_json |n %>);
+
+  g.setOnOwnerChange(function(taskId, newOwner, el) {
+    _rtTicketUpdate(el, taskId, { Owner: newOwner });
+  });
+
+  // ── Inline editing: date pickers ─────────────────────────────────────────
+  g.setOnDateChange(function(taskId, field, isoDate, el) {
+    var payload = {};
+    // RT REST 2.0 expects the field names 'Starts' and 'Due'
+    // An empty string clears the date; null also works on most RT versions
+    payload[field === 'start' ? 'Starts' : 'Due'] = isoDate || '';
+    _rtTicketUpdate(el, taskId, payload);
+  });
+
+  if (g) {
 %   use JSON;
 %   for my $id ( @$ids ) {
 %       my $json = to_json( [ $id, map { $info->{$id}{$_} } qw/name start end
 %           color link milestone owner progress has_members parent open
 %           depends/ ] );
 %       $json =~ s/^\[//; $json =~ s/\]$//;
-        g.AddTaskItem(new JSGantt.TaskItem( <% $json |n%> ));
+    g.AddTaskItem(new JSGantt.TaskItem( <% $json |n%> ));
 %   }
 
-
-    g.Draw();    
+    g.Draw();
     g.DrawDependencies();
-
-  }
-  else {
-
-    alert("not defined");
-
   }
 
-jQuery(function() {
-    jQuery('#rightside').width(jQuery('#GanttChartDIV').width() - jQuery('#leftside').width());
-});
-
+  // Resize handler: redraw chart when window size changes so it fills the new width
+  (function() {
+    var resizeTimer;
+    function redrawGantt() {
+      if (typeof g !== 'undefined' && g && g.Draw) {
+        g.Draw();
+        g.DrawDependencies();
+      }
+    }
+    // Initial draw after layout is complete
+    if (typeof jQuery !== 'undefined') {
+      jQuery(function() {
+        redrawGantt();
+        jQuery(window).on('resize.jsgantt', function() {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(redrawGantt, 150);
+        });
+      });
+    } else if (window.addEventListener) {
+      window.addEventListener('load', redrawGantt);
+      window.addEventListener('resize', function() {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(redrawGantt, 150);
+      });
+    }
+  })();
 </script>
 
 <%init>
+use JSON ();
 my $title = loc('JSGantt Results');
 my @Tickets;
 
@@ -140,6 +241,42 @@ my ( $ids, $info ) = RT::Extension::JSGantt->TicketsInfo(
     Tickets     => \@Tickets,
     CurrentUser => $session{CurrentUser},
 );
+
+# Build owner list: only users with OwnTicket right in the queues of the displayed tickets
+my @owner_list;
+{
+    # Collect unique queue IDs from the current ticket set
+    my %queue_ids;
+    for my $t (@Tickets) {
+        $queue_ids{ $t->Queue }++ if $t && $t->id;
+    }
+
+    my %seen;
+    for my $qid ( sort keys %queue_ids ) {
+        my $queue = RT::Queue->new( $session{CurrentUser} );
+        $queue->Load($qid);
+        next unless $queue->id;
+
+        my $users = RT::Users->new( $session{CurrentUser} );
+        $users->WhoHaveRight(
+            Right                  => 'OwnTicket',
+            Object                 => $queue,
+            IncludeSuperusers      => 1,
+            IncludeSubgroupMembers => 1,
+        );
+        while ( my $u = $users->Next ) {
+            next unless $u->Privileged;
+            next if $seen{ $u->Name }++;
+            push @owner_list, {
+                name    => $u->Name,
+                display => ( $u->RealName || $u->Name ),
+            };
+        }
+    }
+
+    @owner_list = sort { lc( $a->{display} ) cmp lc( $b->{display} ) } @owner_list;
+}
+my $owner_list_json = JSON::encode_json( \@owner_list );
 
 </%init>
 
