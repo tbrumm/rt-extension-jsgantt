@@ -141,8 +141,9 @@ use warnings;
 use strict;
 use List::MoreUtils 'insert_after', 'uniq';
 
-# JS contains mason, and as such cannot use RT->AddJavaScript
+# jsgantt.js is pure JS (no Mason directives) and is included in the squished bundle
 RT->AddStyleSheets('jsgantt.css');
+RT->AddJavaScript('jsgantt.js');
 
 =head2 AllRelatedTickets
 

@@ -45,4 +45,4 @@
 %# those contributions and any derivatives thereof.
 %#
 %# END BPS TAGGED BLOCK }}}
-<script language="javascript" src="<%RT->Config->Get('WebPath')%>/NoAuth/js/jsgantt.js"></script>
+<%perl># jsgantt.js is now included in the squished bundle via RT->AddJavaScript</%perl>

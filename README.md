@@ -60,6 +60,20 @@ rm -rf /opt/rt6/var/mason_data/obj
 systemctl restart apache2    # or your web server
 ```
 
+## JavaScript
+
+`jsgantt.js` is registered via `RT->AddJavaScript` and is automatically included
+in RT's squished JavaScript bundle — no separate `<script>` tag is loaded.
+
+Earlier versions served the file through a Mason callback from `/NoAuth/js/jsgantt.js`.
+An outdated comment in the source claimed the file contained Mason directives, but the
+current version is pure JavaScript. Moving it into the static bundle eliminates the
+Mason overhead (~500 ms per page load) and allows the browser to cache it alongside
+the rest of RT's JavaScript assets.
+
+The original file at `html/NoAuth/js/jsgantt.js` is retained for reference but is
+no longer requested by the extension.
+
 ---
 
 ## Configuration
